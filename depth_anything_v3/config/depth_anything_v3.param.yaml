@@ -1,7 +1,7 @@
 depth_anything_v3:
   ros__parameters:
     # Model configuration
-    onnx_path: "/docker-ros/ws/install/depth_anything_v3/share/depth_anything_v3/models/DA3METRIC-LARGE.onnx"
+    onnx_path: "/home/seeed/ros2-depth-anything-v3-trt/depth_anything_v3/models/DA3METRIC-LARGE.onnx"
     precision: "fp16"  # fp16 or fp32
     
     # Debug configuration

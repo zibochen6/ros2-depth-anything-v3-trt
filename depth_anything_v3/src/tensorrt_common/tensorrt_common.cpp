@@ -493,7 +493,13 @@ bool TrtCommon::buildEngineFromOnnx(
   engine_ = TrtUniquePtr<nvinfer1::ICudaEngine>(
     runtime_->deserializeCudaEngine(plan->data(), plan->size()));
 #else
-  engine_ = TrtUniquePtr<nvinfer1::ICudaEngine>(builder->buildEngineWithConfig(*network, *config));
+  auto serializedModel = builder->buildSerializedNetwork(*network, *config);
+  if (!serializedModel) {
+    logger_.log(nvinfer1::ILogger::Severity::kERROR, "Fail to build serialized network");
+    return false;
+  }
+  engine_ = TrtUniquePtr<nvinfer1::ICudaEngine>(
+    runtime_->deserializeCudaEngine(serializedModel->data(), serializedModel->size()));
 #endif
 
   if (!engine_) {

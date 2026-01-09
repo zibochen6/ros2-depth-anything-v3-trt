@@ -1,0 +1,23 @@
+# Camera intrinsic parameters configuration file (YAML format)
+# For 1920x1080 resolution camera
+# Based on actual calibration parameters
+
+camera_matrix:
+  rows: 3
+  cols: 3
+  data: [421.899003, 0.0, 351.944991, 0.0, 564.573374, 234.029939, 0.0, 0.0, 1.0]
+
+distortion_coefficients:
+  rows: 1
+  cols: 5
+  data: [0.142982, -0.062868, -0.008300, 0.024625, 0.0]
+
+rectification_matrix:
+  rows: 3
+  cols: 3
+  data: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
+
+projection_matrix:
+  rows: 3
+  cols: 4
+  data: [445.792847, 0.0, 365.836570, 0.0, 0.0, 612.838989, 229.917046, 0.0, 0.0, 0.0, 1.0, 0.0]

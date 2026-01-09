@@ -32,6 +32,7 @@ find_package(sensor_msgs REQUIRED)
 find_package(cv_bridge REQUIRED)
 find_package(message_filters REQUIRED)
 find_package(OpenCV 4 REQUIRED)
+find_package(PCL REQUIRED COMPONENTS common io visualization)
 
 # Find CUDA
 find_package(CUDA REQUIRED)
@@ -61,7 +62,11 @@ include_directories(
   ${TENSORRT_INCLUDE_DIR}
   ${CUDA_INCLUDE_DIRS}
   ${OpenCV_INCLUDE_DIRS}
+  ${PCL_INCLUDE_DIRS}
 )
+
+link_directories(${PCL_LIBRARY_DIRS})
+add_definitions(${PCL_DEFINITIONS})
 
 # Create TensorRT depth inference library
 add_library(tensorrt_depth_anything SHARED
@@ -144,12 +149,106 @@ target_link_libraries(generate_engines
   ${CUDA_cusparse_LIBRARY}
 )
 
+# Create standalone demo executable (no ROS dependencies)
+add_executable(standalone_demo
+  src/standalone_demo.cpp
+  src/tensorrt_depth_anything/tensorrt_depth_anything.cpp
+  src/tensorrt_common/tensorrt_common.cpp
+  src/tensorrt_common/simple_profiler.cpp
+)
+
+target_include_directories(standalone_demo PRIVATE
+  include
+  ${OpenCV_INCLUDE_DIRS}
+  ${CUDA_INCLUDE_DIRS}
+  ${TENSORRT_INCLUDE_DIR}
+)
+
+target_link_libraries(standalone_demo
+  ${TENSORRT_LIBRARY}
+  ${CUDA_LIBRARIES}
+  ${OpenCV_LIBRARIES}
+  ${CUDA_CUBLAS_LIBRARIES}
+  ${CUDA_curand_LIBRARY}
+  ${CUDA_cusparse_LIBRARY}
+  ${PCL_LIBRARIES}
+)
+
+# Minimal ROS dependencies for standalone demo (only for message types)
+ament_target_dependencies(standalone_demo
+  rclcpp
+  sensor_msgs
+)
+
+# Create camera depth node executable
+add_executable(camera_depth_node
+  src/camera_depth_node.cpp
+  src/tensorrt_depth_anything/tensorrt_depth_anything.cpp
+  src/tensorrt_common/tensorrt_common.cpp
+  src/tensorrt_common/simple_profiler.cpp
+)
+
+target_include_directories(camera_depth_node PRIVATE
+  include
+  ${OpenCV_INCLUDE_DIRS}
+  ${CUDA_INCLUDE_DIRS}
+  ${TENSORRT_INCLUDE_DIR}
+)
+
+target_link_libraries(camera_depth_node
+  ${TENSORRT_LIBRARY}
+  ${CUDA_LIBRARIES}
+  ${OpenCV_LIBRARIES}
+  ${CUDA_CUBLAS_LIBRARIES}
+  ${CUDA_curand_LIBRARY}
+  ${CUDA_cusparse_LIBRARY}
+)
+
+ament_target_dependencies(camera_depth_node
+  rclcpp
+  sensor_msgs
+  cv_bridge
+)
+
+# Create video depth node executable
+add_executable(video_depth_node
+  src/video_depth_node.cpp
+  src/tensorrt_depth_anything/tensorrt_depth_anything.cpp
+  src/tensorrt_common/tensorrt_common.cpp
+  src/tensorrt_common/simple_profiler.cpp
+)
+
+target_include_directories(video_depth_node PRIVATE
+  include
+  ${OpenCV_INCLUDE_DIRS}
+  ${CUDA_INCLUDE_DIRS}
+  ${TENSORRT_INCLUDE_DIR}
+)
+
+target_link_libraries(video_depth_node
+  ${TENSORRT_LIBRARY}
+  ${CUDA_LIBRARIES}
+  ${OpenCV_LIBRARIES}
+  ${CUDA_CUBLAS_LIBRARIES}
+  ${CUDA_curand_LIBRARY}
+  ${CUDA_cusparse_LIBRARY}
+)
+
+ament_target_dependencies(video_depth_node
+  rclcpp
+  sensor_msgs
+  cv_bridge
+)
+
 # Install targets
 install(TARGETS
   tensorrt_depth_anything
   depth_anything_v3_node
   depth_anything_v3_main
   generate_engines
+  standalone_demo
+  camera_depth_node
+  video_depth_node
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
   RUNTIME DESTINATION lib/${PROJECT_NAME}
