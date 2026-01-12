@@ -1,0 +1,56 @@
+# Multi-camera configuration file
+# This file defines the configuration for multiple GMSL cameras
+# including their device paths, positions, and orientations
+
+cameras:
+  # Front camera
+  - name: camera_0
+    device_path: /dev/video0
+    frame_id: camera_0_link
+    position:
+      x: 0.5    # 0.5m forward from base_link
+      y: 0.0    # centered
+      z: 0.2    # 0.2m above base_link
+    orientation:
+      roll: 0.0   # no roll
+      pitch: 0.0  # no pitch
+      yaw: 0.0    # facing forward
+
+  # Right camera
+  - name: camera_1
+    device_path: /dev/video1
+    frame_id: camera_1_link
+    position:
+      x: 0.0
+      y: -0.5   # 0.5m to the right
+      z: 0.2
+    orientation:
+      roll: 0.0
+      pitch: 0.0
+      yaw: -1.5708  # -90 degrees (facing right)
+
+  # Left camera
+  - name: camera_2
+    device_path: /dev/video2
+    frame_id: camera_2_link
+    position:
+      x: 0.0
+      y: 0.5    # 0.5m to the left
+      z: 0.2
+    orientation:
+      roll: 0.0
+      pitch: 0.0
+      yaw: 1.5708   # 90 degrees (facing left)
+
+  # Rear camera
+  - name: camera_3
+    device_path: /dev/video3
+    frame_id: camera_3_link
+    position:
+      x: -0.5   # 0.5m behind base_link
+      y: 0.0
+      z: 0.2
+    orientation:
+      roll: 0.0
+      pitch: 0.0
+      yaw: 3.14159  # 180 degrees (facing backward)

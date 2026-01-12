@@ -16,6 +16,7 @@
 #include <chrono>
 
 #include "depth_anything_v3/tensorrt_depth_anything.hpp"
+#include "depth_anything_v3/camera_factory.hpp"
 
 class CameraDepthNode : public rclcpp::Node
 {
@@ -23,23 +24,76 @@ public:
     CameraDepthNode() : Node("camera_depth_node")
     {
         // Declare parameters
+        this->declare_parameter("camera_type", "standard");
         this->declare_parameter("camera_id", 0);
+        this->declare_parameter("device_path", "/dev/video0");
         this->declare_parameter("model_path", "onnx/DA3METRIC-LARGE.onnx");
         this->declare_parameter("frame_id", "camera_link");
         this->declare_parameter("publish_rate", 10.0);
         this->declare_parameter("camera_width", 640);
         this->declare_parameter("camera_height", 480);
+        this->declare_parameter("framerate", 30);
+        this->declare_parameter("format", "UYVY");
+        this->declare_parameter("sensor_mode", 0);
+        this->declare_parameter("downsample_factor", 1);  // New parameter for downsampling
         
+        // Camera calibration parameters (optional, will use estimated values if not provided)
+        // Default values are for fisheye lens calibration (1920x1536)
+        this->declare_parameter("use_calibration", false);
+        this->declare_parameter("fx", 824.147361);
+        this->declare_parameter("fy", 823.660879);
+        this->declare_parameter("cx", 958.275200);
+        this->declare_parameter("cy", 767.389372);
+        this->declare_parameter("k1", 1.486308);    // Fisheye D[0]
+        this->declare_parameter("k2", -13.386609);  // Fisheye D[1]
+        this->declare_parameter("p1", 21.409334);   // Fisheye D[2]
+        this->declare_parameter("p2", 3.817858);    // Fisheye D[3]
+        this->declare_parameter("k3", 0.0);
+        
+        camera_type_ = this->get_parameter("camera_type").as_string();
         camera_id_ = this->get_parameter("camera_id").as_int();
+        device_path_ = this->get_parameter("device_path").as_string();
         model_path_ = this->get_parameter("model_path").as_string();
         frame_id_ = this->get_parameter("frame_id").as_string();
         double publish_rate = this->get_parameter("publish_rate").as_double();
         camera_width_ = this->get_parameter("camera_width").as_int();
         camera_height_ = this->get_parameter("camera_height").as_int();
+        framerate_ = this->get_parameter("framerate").as_int();
+        format_ = this->get_parameter("format").as_string();
+        sensor_mode_ = this->get_parameter("sensor_mode").as_int();
+        downsample_factor_ = this->get_parameter("downsample_factor").as_int();
         
-        RCLCPP_INFO(this->get_logger(), "Camera ID: %d", camera_id_);
+        // Get calibration parameters
+        use_calibration_ = this->get_parameter("use_calibration").as_bool();
+        calib_fx_ = this->get_parameter("fx").as_double();
+        calib_fy_ = this->get_parameter("fy").as_double();
+        calib_cx_ = this->get_parameter("cx").as_double();
+        calib_cy_ = this->get_parameter("cy").as_double();
+        calib_k1_ = this->get_parameter("k1").as_double();
+        calib_k2_ = this->get_parameter("k2").as_double();
+        calib_p1_ = this->get_parameter("p1").as_double();
+        calib_p2_ = this->get_parameter("p2").as_double();
+        calib_k3_ = this->get_parameter("k3").as_double();
+        
+        RCLCPP_INFO(this->get_logger(), "Camera type: %s", camera_type_.c_str());
+        if (camera_type_ == "standard") {
+            RCLCPP_INFO(this->get_logger(), "Camera ID: %d", camera_id_);
+        } else if (camera_type_ == "gmsl") {
+            RCLCPP_INFO(this->get_logger(), "Device path: %s", device_path_.c_str());
+            RCLCPP_INFO(this->get_logger(), "Format: %s", format_.c_str());
+            RCLCPP_INFO(this->get_logger(), "Sensor mode: %d", sensor_mode_);
+        }
         RCLCPP_INFO(this->get_logger(), "Model path: %s", model_path_.c_str());
-        RCLCPP_INFO(this->get_logger(), "Resolution: %dx%d", camera_width_, camera_height_);
+        RCLCPP_INFO(this->get_logger(), "Resolution: %dx%d @ %d fps", 
+                    camera_width_, camera_height_, framerate_);
+        if (downsample_factor_ > 1) {
+            RCLCPP_INFO(this->get_logger(), "Downsampling: %dx (for faster inference)", downsample_factor_);
+        }
+        if (use_calibration_) {
+            RCLCPP_INFO(this->get_logger(), "Using calibrated camera parameters:");
+            RCLCPP_INFO(this->get_logger(), "  fx=%.2f, fy=%.2f, cx=%.2f, cy=%.2f", 
+                        calib_fx_, calib_fy_, calib_cx_, calib_cy_);
+        }
         
         // Create publishers
         image_pub_ = this->create_publisher<sensor_msgs::msg::Image>(
@@ -77,8 +131,8 @@ public:
     
     ~CameraDepthNode()
     {
-        if (cap_.isOpened()) {
-            cap_.release();
+        if (camera_capture_ && camera_capture_->isOpened()) {
+            camera_capture_->release();
         }
     }
 
@@ -86,46 +140,44 @@ private:
     bool initCamera()
     {
         RCLCPP_INFO(this->get_logger(), "Opening camera...");
-        cap_.open(camera_id_);
         
-        if (!cap_.isOpened()) {
-            RCLCPP_ERROR(this->get_logger(), "Cannot open camera %d", camera_id_);
+        // Create camera configuration
+        depth_anything_v3::CameraConfig config;
+        config.camera_type = camera_type_;
+        config.camera_id = camera_id_;
+        config.device_path = device_path_;
+        config.width = camera_width_;
+        config.height = camera_height_;
+        config.framerate = framerate_;
+        config.format = format_;
+        config.sensor_mode = sensor_mode_;
+        
+        // Create camera capture using factory
+        camera_capture_ = depth_anything_v3::CameraFactory::createCamera(config);
+        
+        if (!camera_capture_) {
+            RCLCPP_ERROR(this->get_logger(), "Failed to create camera capture instance");
+            RCLCPP_ERROR(this->get_logger(), "Check camera_type parameter (must be 'standard' or 'gmsl')");
             return false;
         }
         
-        // Set camera properties with fallback
-        RCLCPP_INFO(this->get_logger(), "Requesting resolution: %dx%d", camera_width_, camera_height_);
-        
-        cap_.set(cv::CAP_PROP_FRAME_WIDTH, camera_width_);
-        cap_.set(cv::CAP_PROP_FRAME_HEIGHT, camera_height_);
-        cap_.set(cv::CAP_PROP_FPS, 30);
-        
-        // Get actual resolution (may differ from requested)
-        frame_width_ = static_cast<int>(cap_.get(cv::CAP_PROP_FRAME_WIDTH));
-        frame_height_ = static_cast<int>(cap_.get(cv::CAP_PROP_FRAME_HEIGHT));
-        
-        if (frame_width_ != camera_width_ || frame_height_ != camera_height_) {
-            RCLCPP_WARN(this->get_logger(), 
-                "Camera does not support %dx%d, using %dx%d instead",
-                camera_width_, camera_height_, frame_width_, frame_height_);
-        }
-        
-        // Verify we can capture a frame
-        cv::Mat test_frame;
-        for (int i = 0; i < 5; i++) {
-            cap_ >> test_frame;
-            if (!test_frame.empty()) {
-                break;
-            }
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        }
-        
-        if (test_frame.empty()) {
-            RCLCPP_ERROR(this->get_logger(), "Cannot capture frames from camera");
+        // Initialize camera
+        if (!camera_capture_->initialize()) {
+            RCLCPP_ERROR(this->get_logger(), "Failed to initialize camera");
             return false;
         }
         
-        RCLCPP_INFO(this->get_logger(), "✓ Camera opened successfully: %dx%d", frame_width_, frame_height_);
+        if (!camera_capture_->isOpened()) {
+            RCLCPP_ERROR(this->get_logger(), "Camera is not opened");
+            return false;
+        }
+        
+        // Get actual resolution
+        frame_width_ = camera_capture_->getWidth();
+        frame_height_ = camera_capture_->getHeight();
+        
+        RCLCPP_INFO(this->get_logger(), "✓ Camera opened successfully: %dx%d", 
+                    frame_width_, frame_height_);
         
         // Create camera info
         camera_info_ = createCameraInfo(frame_width_, frame_height_);
@@ -153,7 +205,13 @@ private:
                 (1ULL << 30)
             );
             
-            depth_estimator_->initPreprocessBuffer(frame_width_, frame_height_);
+            // Calculate actual inference resolution
+            int inference_width = frame_width_ / downsample_factor_;
+            int inference_height = frame_height_ / downsample_factor_;
+            
+            RCLCPP_INFO(this->get_logger(), "Inference resolution: %dx%d", inference_width, inference_height);
+            
+            depth_estimator_->initPreprocessBuffer(inference_width, inference_height);
             depth_estimator_->setSkyThreshold(0.3f);
             
             RCLCPP_INFO(this->get_logger(), "Depth estimator initialized");
@@ -168,28 +226,62 @@ private:
     {
         sensor_msgs::msg::CameraInfo camera_info;
         
-        const double focal_length = width / (2.0 * std::tan(60.0 * M_PI / 180.0 / 2.0));
-        
         camera_info.width = width;
         camera_info.height = height;
         
-        camera_info.k[0] = focal_length;
-        camera_info.k[2] = width / 2.0;
-        camera_info.k[4] = focal_length;
-        camera_info.k[5] = height / 2.0;
-        camera_info.k[8] = 1.0;
-        
-        camera_info.d.resize(5, 0.0);
-        
-        camera_info.r[0] = 1.0;
-        camera_info.r[4] = 1.0;
-        camera_info.r[8] = 1.0;
-        
-        camera_info.p[0] = focal_length;
-        camera_info.p[2] = width / 2.0;
-        camera_info.p[5] = focal_length;
-        camera_info.p[6] = height / 2.0;
-        camera_info.p[10] = 1.0;
+        if (use_calibration_) {
+            // Use calibrated parameters, scaled for current resolution
+            double scale_x = static_cast<double>(width) / 1920.0;
+            double scale_y = static_cast<double>(height) / 1536.0;
+            
+            // Scale intrinsics
+            camera_info.k[0] = calib_fx_ * scale_x;  // fx
+            camera_info.k[2] = calib_cx_ * scale_x;  // cx
+            camera_info.k[4] = calib_fy_ * scale_y;  // fy
+            camera_info.k[5] = calib_cy_ * scale_y;  // cy
+            camera_info.k[8] = 1.0;
+            
+            // Distortion coefficients (k1, k2, p1, p2, k3)
+            camera_info.d.resize(5);
+            camera_info.d[0] = calib_k1_;
+            camera_info.d[1] = calib_k2_;
+            camera_info.d[2] = calib_p1_;
+            camera_info.d[3] = calib_p2_;
+            camera_info.d[4] = calib_k3_;
+            
+            // Rectification matrix (identity for monocular)
+            camera_info.r[0] = 1.0;
+            camera_info.r[4] = 1.0;
+            camera_info.r[8] = 1.0;
+            
+            // Projection matrix
+            camera_info.p[0] = calib_fx_ * scale_x;
+            camera_info.p[2] = calib_cx_ * scale_x;
+            camera_info.p[5] = calib_fy_ * scale_y;
+            camera_info.p[6] = calib_cy_ * scale_y;
+            camera_info.p[10] = 1.0;
+        } else {
+            // Use estimated parameters based on 60° FOV
+            const double focal_length = width / (2.0 * std::tan(60.0 * M_PI / 180.0 / 2.0));
+            
+            camera_info.k[0] = focal_length;
+            camera_info.k[2] = width / 2.0;
+            camera_info.k[4] = focal_length;
+            camera_info.k[5] = height / 2.0;
+            camera_info.k[8] = 1.0;
+            
+            camera_info.d.resize(5, 0.0);
+            
+            camera_info.r[0] = 1.0;
+            camera_info.r[4] = 1.0;
+            camera_info.r[8] = 1.0;
+            
+            camera_info.p[0] = focal_length;
+            camera_info.p[2] = width / 2.0;
+            camera_info.p[5] = focal_length;
+            camera_info.p[6] = height / 2.0;
+            camera_info.p[10] = 1.0;
+        }
         
         camera_info.header.frame_id = frame_id_;
         
@@ -226,10 +318,19 @@ private:
         const cv::Mat& rgb_image,
         sensor_msgs::msg::PointCloud2& cloud_msg)
     {
-        const double fx = camera_info_.k[0];
-        const double fy = camera_info_.k[4];
-        const double cx = camera_info_.k[2];
-        const double cy = camera_info_.k[5];
+        createPointCloudWithCameraInfo(depth_image, rgb_image, camera_info_, cloud_msg);
+    }
+    
+    void createPointCloudWithCameraInfo(
+        const cv::Mat& depth_image,
+        const cv::Mat& rgb_image,
+        const sensor_msgs::msg::CameraInfo& cam_info,
+        sensor_msgs::msg::PointCloud2& cloud_msg)
+    {
+        const double fx = cam_info.k[0];
+        const double fy = cam_info.k[4];
+        const double cx = cam_info.k[2];
+        const double cy = cam_info.k[5];
         
         const int height = depth_image.rows;
         const int width = depth_image.cols;
@@ -304,22 +405,44 @@ private:
     void timerCallback()
     {
         cv::Mat frame;
-        cap_ >> frame;
+        
+        if (!camera_capture_->read(frame)) {
+            RCLCPP_WARN(this->get_logger(), "Failed to read frame from camera");
+            return;
+        }
         
         if (frame.empty()) {
             RCLCPP_WARN(this->get_logger(), "Empty frame captured");
             return;
         }
         
+        // Downsample if requested (for faster inference)
+        cv::Mat frame_for_inference = frame;
+        sensor_msgs::msg::CameraInfo inference_camera_info = camera_info_;
+        
+        if (downsample_factor_ > 1) {
+            cv::Mat downsampled;
+            cv::resize(frame, downsampled, 
+                      cv::Size(frame.cols / downsample_factor_, frame.rows / downsample_factor_),
+                      0, 0, cv::INTER_LINEAR);
+            frame_for_inference = downsampled;
+            
+            // Update camera info for downsampled resolution
+            inference_camera_info = createCameraInfo(
+                frame_for_inference.cols, 
+                frame_for_inference.rows
+            );
+        }
+        
         auto stamp = this->now();
         
         // Convert to RGB
         cv::Mat frame_rgb;
-        cv::cvtColor(frame, frame_rgb, cv::COLOR_BGR2RGB);
+        cv::cvtColor(frame_for_inference, frame_rgb, cv::COLOR_BGR2RGB);
         
-        // Run depth estimation
+        // Run depth estimation with correct camera info
         std::vector<cv::Mat> images = {frame_rgb};
-        bool success = depth_estimator_->doInference(images, camera_info_, 1, false);
+        bool success = depth_estimator_->doInference(images, inference_camera_info, 1, false);
         
         if (!success) {
             RCLCPP_ERROR(this->get_logger(), "Inference failed");
@@ -328,8 +451,8 @@ private:
         
         const cv::Mat& depth_image = depth_estimator_->getDepthImage();
         
-        // Publish input image
-        auto input_msg = cv_bridge::CvImage(std_msgs::msg::Header(), "bgr8", frame).toImageMsg();
+        // Publish input image (use downsampled frame for consistency)
+        auto input_msg = cv_bridge::CvImage(std_msgs::msg::Header(), "bgr8", frame_for_inference).toImageMsg();
         input_msg->header.stamp = stamp;
         input_msg->header.frame_id = frame_id_;
         image_pub_->publish(*input_msg);
@@ -347,27 +470,45 @@ private:
         depth_colored_msg->header.frame_id = frame_id_;
         depth_colored_pub_->publish(*depth_colored_msg);
         
-        // Publish point cloud
+        // Publish point cloud with correct camera info
         sensor_msgs::msg::PointCloud2 cloud_msg;
-        createPointCloud(depth_image, frame_rgb, cloud_msg);
+        createPointCloudWithCameraInfo(depth_image, frame_rgb, inference_camera_info, cloud_msg);
         pointcloud_pub_->publish(cloud_msg);
         
-        // Publish camera info
-        camera_info_.header.stamp = stamp;
-        camera_info_pub_->publish(camera_info_);
+        // Publish camera info (use inference camera info for consistency)
+        inference_camera_info.header.stamp = stamp;
+        camera_info_pub_->publish(inference_camera_info);
     }
     
     // Parameters
+    std::string camera_type_;
     int camera_id_;
+    std::string device_path_;
     std::string model_path_;
     std::string frame_id_;
     int frame_width_;
     int frame_height_;
     int camera_width_;
     int camera_height_;
+    int framerate_;
+    std::string format_;
+    int sensor_mode_;
+    int downsample_factor_;  // Downsample factor for faster inference
+    
+    // Camera calibration parameters
+    bool use_calibration_;
+    double calib_fx_;
+    double calib_fy_;
+    double calib_cx_;
+    double calib_cy_;
+    double calib_k1_;
+    double calib_k2_;
+    double calib_p1_;
+    double calib_p2_;
+    double calib_k3_;
     
     // Camera
-    cv::VideoCapture cap_;
+    std::unique_ptr<depth_anything_v3::CameraCapture> camera_capture_;
     sensor_msgs::msg::CameraInfo camera_info_;
     
     // Depth estimator

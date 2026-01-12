@@ -1,20 +1,20 @@
-# in order to be able to use this script install:
-# pip install docker-run-cli
-docker-run \
---gpus 'all,"capabilities=compute,utility,graphics"' \
---ipc=host \
---privileged \
---ulimit memlock=-1 \
---ulimit stack=67108864 \
--it \
---volume $PWD:/docker-ros/ws/src/target \
---volume /media/beemelmanns/data/bagfiles/:/bags \
-tillbeemelmanns/ros2-depth-anything-v3:latest-dev \
-bash
+#!/bin/bash
+# Legacy run script - redirects to test_single_camera_fast.sh
 
+echo "=========================================="
+echo "Legacy Script Redirect"
+echo "=========================================="
+echo ""
+echo "This script is deprecated."
+echo "Please use one of these instead:"
+echo ""
+echo "  1. Single camera:  ./test_single_camera_fast.sh"
+echo "  2. Two cameras:    ./run_2cameras_fast.sh"
+echo "  3. Video:          ./run_video_depth.sh"
+echo ""
+echo "Redirecting to single camera test in 3 seconds..."
+echo ""
 
-# For debugging 
-# apt update && apt install -y \
-# ros-jazzy-rviz2 \
-# ros-jazzy-rosbag2 \
-# ros-jazzy-rosbag2-storage-mcap
+sleep 3
+
+exec ./test_single_camera_fast.sh

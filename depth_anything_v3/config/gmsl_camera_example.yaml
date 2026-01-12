@@ -1,0 +1,32 @@
+# Example configuration for GMSL camera
+# This file demonstrates how to configure a single GMSL camera
+
+camera_depth_node:
+  ros__parameters:
+    # Camera type: "standard" or "gmsl"
+    camera_type: "gmsl"
+    
+    # GMSL camera device path
+    device_path: "/dev/video0"
+    
+    # Camera resolution
+    camera_width: 1920
+    camera_height: 1536
+    
+    # Frame rate
+    framerate: 30
+    
+    # Video format (UYVY is common for GMSL cameras)
+    format: "UYVY"
+    
+    # Sensor mode (0 is typically default)
+    sensor_mode: 0
+    
+    # Model path for depth estimation
+    model_path: "onnx/DA3METRIC-LARGE.onnx"
+    
+    # ROS frame ID
+    frame_id: "camera_link"
+    
+    # Publishing rate (Hz)
+    publish_rate: 10.0

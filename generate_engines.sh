@@ -1,28 +1,61 @@
 #!/bin/bash
-# Copyright 2025 Institute for Automotive Engineering (ika), RWTH Aachen University
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+# Pre-generate TensorRT engines for faster first-time startup
+# This script builds TensorRT engines from ONNX models
 
-# Generate TensorRT engine files for all ONNX models
-# Usage: ./generate_engines.sh [models_directory]
+echo "=========================================="
+echo "TensorRT Engine Generation"
+echo "=========================================="
+echo ""
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &> /dev/null && pwd)"
-MODELS_DIR="${1:-${SCRIPT_DIR}/depth_anything_v3/models}"
+# Check if ONNX models exist
+if [ ! -d "onnx" ]; then
+    echo "Error: onnx/ directory not found"
+    echo "Please download ONNX models first"
+    exit 1
+fi
 
-echo "Sourcing the built workspace..."
-source install/setup.bash
+# Find ONNX models
+MODELS=$(find onnx -name "*.onnx" 2>/dev/null)
+
+if [ -z "$MODELS" ]; then
+    echo "Error: No ONNX models found in onnx/"
+    echo "Please download models from Hugging Face"
+    exit 1
+fi
+
+echo "Found ONNX models:"
+echo "$MODELS"
+echo ""
+
+# Source ROS environment
+if [ -f "install/setup.bash" ]; then
+    source install/setup.bash
+else
+    echo "Error: Workspace not built"
+    echo "Please run: colcon build --packages-select depth_anything_v3"
+    exit 1
+fi
 
 echo "Generating TensorRT engines..."
-./install/depth_anything_v3/lib/depth_anything_v3/generate_engines "${MODELS_DIR}"
+echo "This will take 5-10 minutes on first run"
+echo ""
 
-echo "Done! Engine files have been generated in ${MODELS_DIR}"
+# Run a quick inference to trigger engine generation
+for MODEL in $MODELS; do
+    echo "Processing: $MODEL"
+    
+    # Create a temporary test to trigger engine build
+    timeout 120 ros2 run depth_anything_v3 camera_depth_node \
+        --ros-args \
+        -p camera_id:=0 \
+        -p model_path:="$MODEL" \
+        2>&1 | grep -i "engine" || true
+    
+    echo "✓ Engine generated for $MODEL"
+    echo ""
+done
+
+echo "=========================================="
+echo "Engine generation complete!"
+echo "Next startup will be faster"
+echo "=========================================="

@@ -31,6 +31,9 @@ find_package(rclcpp_components REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(cv_bridge REQUIRED)
 find_package(message_filters REQUIRED)
+find_package(tf2_ros REQUIRED)
+find_package(tf2_sensor_msgs REQUIRED)
+find_package(geometry_msgs REQUIRED)
 find_package(OpenCV 4 REQUIRED)
 find_package(PCL REQUIRED COMPONENTS common io visualization)
 
@@ -150,39 +153,43 @@ target_link_libraries(generate_engines
 )
 
 # Create standalone demo executable (no ROS dependencies)
-add_executable(standalone_demo
-  src/standalone_demo.cpp
-  src/tensorrt_depth_anything/tensorrt_depth_anything.cpp
-  src/tensorrt_common/tensorrt_common.cpp
-  src/tensorrt_common/simple_profiler.cpp
-)
-
-target_include_directories(standalone_demo PRIVATE
-  include
-  ${OpenCV_INCLUDE_DIRS}
-  ${CUDA_INCLUDE_DIRS}
-  ${TENSORRT_INCLUDE_DIR}
-)
-
-target_link_libraries(standalone_demo
-  ${TENSORRT_LIBRARY}
-  ${CUDA_LIBRARIES}
-  ${OpenCV_LIBRARIES}
-  ${CUDA_CUBLAS_LIBRARIES}
-  ${CUDA_curand_LIBRARY}
-  ${CUDA_cusparse_LIBRARY}
-  ${PCL_LIBRARIES}
-)
-
-# Minimal ROS dependencies for standalone demo (only for message types)
-ament_target_dependencies(standalone_demo
-  rclcpp
-  sensor_msgs
-)
+# Commented out - file does not exist
+# add_executable(standalone_demo
+#   src/standalone_demo.cpp
+#   src/tensorrt_depth_anything/tensorrt_depth_anything.cpp
+#   src/tensorrt_common/tensorrt_common.cpp
+#   src/tensorrt_common/simple_profiler.cpp
+# )
+# 
+# target_include_directories(standalone_demo PRIVATE
+#   include
+#   ${OpenCV_INCLUDE_DIRS}
+#   ${CUDA_INCLUDE_DIRS}
+#   ${TENSORRT_INCLUDE_DIR}
+# )
+# 
+# target_link_libraries(standalone_demo
+#   ${TENSORRT_LIBRARY}
+#   ${CUDA_LIBRARIES}
+#   ${OpenCV_LIBRARIES}
+#   ${CUDA_CUBLAS_LIBRARIES}
+#   ${CUDA_curand_LIBRARY}
+#   ${CUDA_cusparse_LIBRARY}
+#   ${PCL_LIBRARIES}
+# )
+# 
+# # Minimal ROS dependencies for standalone demo (only for message types)
+# ament_target_dependencies(standalone_demo
+#   rclcpp
+#   sensor_msgs
+# )
 
 # Create camera depth node executable
 add_executable(camera_depth_node
   src/camera_depth_node.cpp
+  src/camera_capture/standard_camera_capture.cpp
+  src/camera_capture/gmsl_camera_capture.cpp
+  src/camera_capture/camera_factory.cpp
   src/tensorrt_depth_anything/tensorrt_depth_anything.cpp
   src/tensorrt_common/tensorrt_common.cpp
   src/tensorrt_common/simple_profiler.cpp
@@ -240,15 +247,33 @@ ament_target_dependencies(video_depth_node
   cv_bridge
 )
 
+# Create point cloud fusion node executable
+add_executable(point_cloud_fusion_node
+  src/point_cloud_fusion_node.cpp
+)
+
+target_include_directories(point_cloud_fusion_node PRIVATE
+  include
+)
+
+ament_target_dependencies(point_cloud_fusion_node
+  rclcpp
+  sensor_msgs
+  tf2_ros
+  tf2_sensor_msgs
+  geometry_msgs
+)
+
 # Install targets
 install(TARGETS
   tensorrt_depth_anything
   depth_anything_v3_node
   depth_anything_v3_main
   generate_engines
-  standalone_demo
+  # standalone_demo  # Commented out - file does not exist
   camera_depth_node
   video_depth_node
+  point_cloud_fusion_node
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
   RUNTIME DESTINATION lib/${PROJECT_NAME}
@@ -265,6 +290,43 @@ install(DIRECTORY config launch models
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
   ament_lint_auto_find_test_dependencies()
+  
+  # Find Google Test
+  find_package(ament_cmake_gtest REQUIRED)
+  
+  # Camera type selection property test
+  ament_add_gtest(test_camera_type_selection
+    test/test_camera_type_selection.cpp
+    src/camera_capture/standard_camera_capture.cpp
+    src/camera_capture/gmsl_camera_capture.cpp
+    src/camera_capture/camera_factory.cpp
+  )
+  
+  target_include_directories(test_camera_type_selection PRIVATE
+    include
+    ${OpenCV_INCLUDE_DIRS}
+  )
+  
+  target_link_libraries(test_camera_type_selection
+    ${OpenCV_LIBRARIES}
+  )
+  
+  ament_target_dependencies(test_camera_type_selection
+    rclcpp
+  )
+  
+  # GStreamer pipeline construction property test
+  ament_add_gtest(test_gstreamer_pipeline
+    test/test_gstreamer_pipeline.cpp
+  )
+  
+  target_include_directories(test_gstreamer_pipeline PRIVATE
+    include
+  )
+  
+  ament_target_dependencies(test_gstreamer_pipeline
+    rclcpp
+  )
 endif()
 
 ament_export_libraries(tensorrt_depth_anything depth_anything_v3_node)

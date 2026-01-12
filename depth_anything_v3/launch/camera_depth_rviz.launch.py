@@ -44,6 +44,35 @@ def generate_launch_description():
         description='Camera height (240/480/720)'
     )
     
+    camera_type_arg = DeclareLaunchArgument(
+        'camera_type',
+        default_value='standard',
+        description='Camera type (standard or gmsl)'
+    )
+    
+    downsample_factor_arg = DeclareLaunchArgument(
+        'downsample_factor',
+        default_value='1',
+        description='Downsample factor for faster inference (1=no downsampling, 2=half resolution, etc.)'
+    )
+    
+    # Camera calibration parameters
+    use_calibration_arg = DeclareLaunchArgument(
+        'use_calibration',
+        default_value='false',
+        description='Use calibrated camera parameters'
+    )
+    
+    fx_arg = DeclareLaunchArgument('fx', default_value='824.147361', description='Focal length X (fisheye)')
+    fy_arg = DeclareLaunchArgument('fy', default_value='823.660879', description='Focal length Y (fisheye)')
+    cx_arg = DeclareLaunchArgument('cx', default_value='958.275200', description='Principal point X (fisheye)')
+    cy_arg = DeclareLaunchArgument('cy', default_value='767.389372', description='Principal point Y (fisheye)')
+    k1_arg = DeclareLaunchArgument('k1', default_value='1.486308', description='Fisheye distortion D[0]')
+    k2_arg = DeclareLaunchArgument('k2', default_value='-13.386609', description='Fisheye distortion D[1]')
+    p1_arg = DeclareLaunchArgument('p1', default_value='21.409334', description='Fisheye distortion D[2]')
+    p2_arg = DeclareLaunchArgument('p2', default_value='3.817858', description='Fisheye distortion D[3]')
+    k3_arg = DeclareLaunchArgument('k3', default_value='0.0', description='Distortion k3 (unused for fisheye)')
+    
     # Camera depth node
     camera_depth_node = Node(
         package='depth_anything_v3',
@@ -51,12 +80,24 @@ def generate_launch_description():
         name='camera_depth_node',
         output='screen',
         parameters=[{
+            'camera_type': LaunchConfiguration('camera_type'),
             'camera_id': LaunchConfiguration('camera_id'),
             'model_path': LaunchConfiguration('model_path'),
             'frame_id': 'camera_link',
             'publish_rate': LaunchConfiguration('publish_rate'),
             'camera_width': LaunchConfiguration('camera_width'),
             'camera_height': LaunchConfiguration('camera_height'),
+            'downsample_factor': LaunchConfiguration('downsample_factor'),
+            'use_calibration': LaunchConfiguration('use_calibration'),
+            'fx': LaunchConfiguration('fx'),
+            'fy': LaunchConfiguration('fy'),
+            'cx': LaunchConfiguration('cx'),
+            'cy': LaunchConfiguration('cy'),
+            'k1': LaunchConfiguration('k1'),
+            'k2': LaunchConfiguration('k2'),
+            'p1': LaunchConfiguration('p1'),
+            'p2': LaunchConfiguration('p2'),
+            'k3': LaunchConfiguration('k3'),
         }],
         remappings=[
             ('~/input/image', '/camera/image'),
@@ -86,11 +127,16 @@ def generate_launch_description():
     )
     
     return LaunchDescription([
+        camera_type_arg,
         camera_id_arg,
         model_path_arg,
         publish_rate_arg,
         camera_width_arg,
         camera_height_arg,
+        downsample_factor_arg,
+        use_calibration_arg,
+        fx_arg, fy_arg, cx_arg, cy_arg,
+        k1_arg, k2_arg, p1_arg, p2_arg, k3_arg,
         camera_depth_node,
         static_tf_node,
         rviz_node,
