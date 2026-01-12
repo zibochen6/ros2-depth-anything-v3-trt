@@ -14,6 +14,8 @@
 #include <opencv2/highgui.hpp>
 #include <thread>
 #include <chrono>
+#include <fstream>
+#include <yaml-cpp/yaml.h>
 
 #include "depth_anything_v3/tensorrt_depth_anything.hpp"
 #include "depth_anything_v3/camera_factory.hpp"
@@ -36,6 +38,9 @@ public:
         this->declare_parameter("format", "UYVY");
         this->declare_parameter("sensor_mode", 0);
         this->declare_parameter("downsample_factor", 1);  // New parameter for downsampling
+        
+        // Camera calibration file path (optional)
+        this->declare_parameter("camera_info_file", "");
         
         // Camera calibration parameters (optional, will use estimated values if not provided)
         // Default values are for fisheye lens calibration (1920x1536)
@@ -63,17 +68,26 @@ public:
         sensor_mode_ = this->get_parameter("sensor_mode").as_int();
         downsample_factor_ = this->get_parameter("downsample_factor").as_int();
         
-        // Get calibration parameters
-        use_calibration_ = this->get_parameter("use_calibration").as_bool();
-        calib_fx_ = this->get_parameter("fx").as_double();
-        calib_fy_ = this->get_parameter("fy").as_double();
-        calib_cx_ = this->get_parameter("cx").as_double();
-        calib_cy_ = this->get_parameter("cy").as_double();
-        calib_k1_ = this->get_parameter("k1").as_double();
-        calib_k2_ = this->get_parameter("k2").as_double();
-        calib_p1_ = this->get_parameter("p1").as_double();
-        calib_p2_ = this->get_parameter("p2").as_double();
-        calib_k3_ = this->get_parameter("k3").as_double();
+        // Get calibration file path
+        std::string camera_info_file = this->get_parameter("camera_info_file").as_string();
+        
+        // Try to load calibration from file first, then fall back to parameters
+        if (!camera_info_file.empty() && loadCalibrationFromFile(camera_info_file)) {
+            use_calibration_ = true;
+            RCLCPP_INFO(this->get_logger(), "Loaded calibration from file: %s", camera_info_file.c_str());
+        } else {
+            // Get calibration parameters from ROS parameters
+            use_calibration_ = this->get_parameter("use_calibration").as_bool();
+            calib_fx_ = this->get_parameter("fx").as_double();
+            calib_fy_ = this->get_parameter("fy").as_double();
+            calib_cx_ = this->get_parameter("cx").as_double();
+            calib_cy_ = this->get_parameter("cy").as_double();
+            calib_k1_ = this->get_parameter("k1").as_double();
+            calib_k2_ = this->get_parameter("k2").as_double();
+            calib_p1_ = this->get_parameter("p1").as_double();
+            calib_p2_ = this->get_parameter("p2").as_double();
+            calib_k3_ = this->get_parameter("k3").as_double();
+        }
         
         RCLCPP_INFO(this->get_logger(), "Camera type: %s", camera_type_.c_str());
         if (camera_type_ == "standard") {
@@ -137,6 +151,44 @@ public:
     }
 
 private:
+    bool loadCalibrationFromFile(const std::string& file_path)
+    {
+        try {
+            RCLCPP_INFO(this->get_logger(), "Loading calibration from: %s", file_path.c_str());
+            
+            // Load YAML file
+            YAML::Node config = YAML::LoadFile(file_path);
+            
+            // Read intrinsic parameters
+            if (config["fx"]) calib_fx_ = config["fx"].as<double>();
+            if (config["fy"]) calib_fy_ = config["fy"].as<double>();
+            if (config["cx"]) calib_cx_ = config["cx"].as<double>();
+            if (config["cy"]) calib_cy_ = config["cy"].as<double>();
+            
+            // Read distortion coefficients
+            if (config["k1"]) calib_k1_ = config["k1"].as<double>();
+            if (config["k2"]) calib_k2_ = config["k2"].as<double>();
+            if (config["p1"]) calib_p1_ = config["p1"].as<double>();
+            if (config["p2"]) calib_p2_ = config["p2"].as<double>();
+            if (config["k3"]) calib_k3_ = config["k3"].as<double>();
+            
+            RCLCPP_INFO(this->get_logger(), "✓ Calibration loaded successfully");
+            RCLCPP_INFO(this->get_logger(), "  fx=%.2f, fy=%.2f, cx=%.2f, cy=%.2f", 
+                        calib_fx_, calib_fy_, calib_cx_, calib_cy_);
+            RCLCPP_INFO(this->get_logger(), "  Distortion: k1=%.4f, k2=%.4f, p1=%.4f, p2=%.4f, k3=%.4f",
+                        calib_k1_, calib_k2_, calib_p1_, calib_p2_, calib_k3_);
+            
+            return true;
+        } catch (const YAML::Exception& e) {
+            RCLCPP_WARN(this->get_logger(), "Failed to load calibration file: %s", e.what());
+            RCLCPP_WARN(this->get_logger(), "Will use default or parameter-based calibration");
+            return false;
+        } catch (const std::exception& e) {
+            RCLCPP_WARN(this->get_logger(), "Error loading calibration: %s", e.what());
+            return false;
+        }
+    }
+
     bool initCamera()
     {
         RCLCPP_INFO(this->get_logger(), "Opening camera...");

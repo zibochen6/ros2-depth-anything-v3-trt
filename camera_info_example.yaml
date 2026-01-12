@@ -1,23 +1,49 @@
 # Camera intrinsic parameters configuration file (YAML format)
-# For 1920x1080 resolution camera
+# For 1920x1536 resolution fisheye camera
 # Based on actual calibration parameters
 
+# Image resolution
+image_width: 1920
+image_height: 1536
+
+# Camera intrinsic parameters
+# fx, fy: focal length
+# cx, cy: principal point (optical center)
+fx: 824.147361
+fy: 823.660879
+cx: 958.275200
+cy: 767.389372
+
+# Fisheye distortion coefficients
+# k1, k2, k3: radial distortion
+# p1, p2: tangential distortion
+distortion_model: "fisheye"
+k1: 1.486308
+k2: -13.386609
+p1: 21.409334
+p2: 3.817858
+k3: 0.0
+
+# Camera matrix (3x3)
 camera_matrix:
   rows: 3
   cols: 3
-  data: [421.899003, 0.0, 351.944991, 0.0, 564.573374, 234.029939, 0.0, 0.0, 1.0]
+  data: [824.147361, 0.0, 958.275200, 0.0, 823.660879, 767.389372, 0.0, 0.0, 1.0]
 
+# Distortion coefficients (fisheye model: k1, k2, p1, p2, k3)
 distortion_coefficients:
   rows: 1
   cols: 5
-  data: [0.142982, -0.062868, -0.008300, 0.024625, 0.0]
+  data: [1.486308, -13.386609, 21.409334, 3.817858, 0.0]
 
+# Rectification matrix (identity for monocular camera)
 rectification_matrix:
   rows: 3
   cols: 3
   data: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
 
+# Projection matrix (3x4)
 projection_matrix:
   rows: 3
   cols: 4
-  data: [445.792847, 0.0, 365.836570, 0.0, 0.0, 612.838989, 229.917046, 0.0, 0.0, 0.0, 1.0, 0.0]
+  data: [824.147361, 0.0, 958.275200, 0.0, 0.0, 823.660879, 767.389372, 0.0, 0.0, 0.0, 1.0, 0.0]

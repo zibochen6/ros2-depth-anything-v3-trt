@@ -57,6 +57,12 @@ def generate_launch_description():
     )
     
     # Camera calibration parameters
+    camera_info_file_arg = DeclareLaunchArgument(
+        'camera_info_file',
+        default_value='',
+        description='Path to camera calibration YAML file (optional)'
+    )
+    
     use_calibration_arg = DeclareLaunchArgument(
         'use_calibration',
         default_value='false',
@@ -88,6 +94,7 @@ def generate_launch_description():
             'camera_width': LaunchConfiguration('camera_width'),
             'camera_height': LaunchConfiguration('camera_height'),
             'downsample_factor': LaunchConfiguration('downsample_factor'),
+            'camera_info_file': LaunchConfiguration('camera_info_file'),
             'use_calibration': LaunchConfiguration('use_calibration'),
             'fx': LaunchConfiguration('fx'),
             'fy': LaunchConfiguration('fy'),
@@ -134,6 +141,7 @@ def generate_launch_description():
         camera_width_arg,
         camera_height_arg,
         downsample_factor_arg,
+        camera_info_file_arg,
         use_calibration_arg,
         fx_arg, fy_arg, cx_arg, cy_arg,
         k1_arg, k2_arg, p1_arg, p2_arg, k3_arg,

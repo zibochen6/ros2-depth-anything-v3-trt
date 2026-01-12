@@ -1,6 +1,7 @@
 #!/bin/bash
 # Test single camera with lower resolution for faster inference
 # Optional: Set USE_CALIBRATION=1 to use calibrated camera parameters
+# Optional: Set CAMERA_INFO_FILE=/path/to/camera_info.yaml to load from file
 
 echo "=========================================="
 echo "Single Camera Fast Test"
@@ -23,8 +24,12 @@ echo "  - Camera resolution: 1920x1536"
 echo "  - Downsample factor: 2x (960x768 for inference)"
 echo "  - Depth estimation: 518x518 (TensorRT model input)"
 
-# Check if using calibration
-if [ "${USE_CALIBRATION}" = "1" ]; then
+# Check if using calibration file
+if [ -n "${CAMERA_INFO_FILE}" ] && [ -f "${CAMERA_INFO_FILE}" ]; then
+    echo "  - Camera parameters: FROM FILE"
+    echo "    File: ${CAMERA_INFO_FILE}"
+    CALIB_PARAMS="camera_info_file:=${CAMERA_INFO_FILE}"
+elif [ "${USE_CALIBRATION}" = "1" ]; then
     echo "  - Camera parameters: CALIBRATED (FISHEYE)"
     echo "    fx=824.15, fy=823.66, cx=958.28, cy=767.39"
     echo "    Fisheye distortion: D=[1.49, -13.39, 21.41, 3.82]"
@@ -32,6 +37,7 @@ if [ "${USE_CALIBRATION}" = "1" ]; then
 else
     echo "  - Camera parameters: ESTIMATED (60° FOV)"
     echo "    Tip: Set USE_CALIBRATION=1 to use calibrated fisheye parameters"
+    echo "    Or: Set CAMERA_INFO_FILE=/path/to/camera_info.yaml to load from file"
     CALIB_PARAMS=""
 fi
 

@@ -36,6 +36,7 @@ find_package(tf2_sensor_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(OpenCV 4 REQUIRED)
 find_package(PCL REQUIRED COMPONENTS common io visualization)
+find_package(yaml-cpp REQUIRED)
 
 # Find CUDA
 find_package(CUDA REQUIRED)
@@ -209,6 +210,7 @@ target_link_libraries(camera_depth_node
   ${CUDA_CUBLAS_LIBRARIES}
   ${CUDA_curand_LIBRARY}
   ${CUDA_cusparse_LIBRARY}
+  yaml-cpp
 )
 
 ament_target_dependencies(camera_depth_node
