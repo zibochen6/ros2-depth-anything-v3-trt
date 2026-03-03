@@ -7,6 +7,7 @@
 #   USE_CALIBRATION=1, CAMERA_INFO_FILE=/path/to/camera_info.yaml
 #   ENABLE_UNDISTORTION=1, UNDISTORTION_BALANCE=0.0..1.0
 #   STREAM_FPS, RTSP_PORT, RTSP_MOUNT, ENCODER, BITRATE_KBPS
+#   PANEL_WIDTH, PANEL_HEIGHT, MAX_POINTS, POINT_RADIUS
 
 echo "=========================================="
 echo "Camera + Depth + PointCloud RTSP Stream"
@@ -39,6 +40,10 @@ RTSP_PORT="${RTSP_PORT:-8554}"
 RTSP_MOUNT="${RTSP_MOUNT:-/depth}"
 ENCODER="${ENCODER:-auto}"
 BITRATE_KBPS="${BITRATE_KBPS:-4000}"
+PANEL_WIDTH="${PANEL_WIDTH:--1}"
+PANEL_HEIGHT="${PANEL_HEIGHT:--1}"
+MAX_POINTS="${MAX_POINTS:-30000}"
+POINT_RADIUS="${POINT_RADIUS:-1}"
 
 CALIB_PARAMS="use_calibration:=false"
 if [ -n "${CAMERA_INFO_FILE}" ] && [ -f "${CAMERA_INFO_FILE}" ]; then
@@ -62,6 +67,8 @@ echo "  - Stream FPS: ${STREAM_FPS}"
 echo "  - RTSP: rtsp://127.0.0.1:${RTSP_PORT}${RTSP_MOUNT}"
 echo "  - LAN : rtsp://<jetson-ip>:${RTSP_PORT}${RTSP_MOUNT}"
 echo "  - Encoder: ${ENCODER} (${BITRATE_KBPS} kbps)"
+echo "  - Mosaic panel: ${PANEL_WIDTH}x${PANEL_HEIGHT} (-1 means auto)"
+echo "  - Point cloud: max_points=${MAX_POINTS}, point_radius=${POINT_RADIUS}"
 echo ""
 echo "Starting camera depth + RTSP stream..."
 echo ""
@@ -79,5 +86,9 @@ ros2 launch depth_anything_v3 camera_depth_rtsp.launch.py \
     rtsp_mount:=${RTSP_MOUNT} \
     encoder:=${ENCODER} \
     bitrate_kbps:=${BITRATE_KBPS} \
+    panel_width:=${PANEL_WIDTH} \
+    panel_height:=${PANEL_HEIGHT} \
+    max_points:=${MAX_POINTS} \
+    point_radius:=${POINT_RADIUS} \
     ${CALIB_PARAMS} \
     ${UNDISTORT_PARAMS}

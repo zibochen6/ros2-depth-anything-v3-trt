@@ -494,13 +494,14 @@ class DepthMosaicRtspNode(Node):
 
         order = np.argsort(z_cam)[::-1]  # draw far first, near last
         radius = max(1, self.point_radius)
-        for idx in order:
-            color = tuple(int(c) for c in colors[idx])
-            px = int(u_i[idx])
-            py = int(v_i[idx])
-            if radius <= 1:
-                canvas[py, px] = color
-            else:
+        if radius <= 1:
+            # Vectorized draw path (much lower CPU cost than per-point Python loop).
+            canvas[v_i[order], u_i[order]] = colors[order]
+        else:
+            for idx in order:
+                color = tuple(int(c) for c in colors[idx])
+                px = int(u_i[idx])
+                py = int(v_i[idx])
                 cv2.circle(canvas, (px, py), radius, color, thickness=-1, lineType=cv2.LINE_AA)
 
         return canvas
