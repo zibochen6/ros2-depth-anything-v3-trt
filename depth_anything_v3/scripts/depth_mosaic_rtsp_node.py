@@ -3,6 +3,7 @@
 
 import math
 import threading
+import traceback
 from typing import Optional, Tuple
 
 import cv2
@@ -57,31 +58,39 @@ if GstRtspServer is not None:
             self._push_source_id = 0
 
         def do_create_element(self, _url):
-            return Gst.parse_launch(self._launch)
+            try:
+                return Gst.parse_launch(self._launch)
+            except Exception as exc:
+                self._owner.get_logger().error(f"Gst.parse_launch failed: {exc}")
+                self._owner.get_logger().error(f"Launch pipeline: {self._launch}")
+                raise
 
         def do_configure(self, media):
-            self._frame_count = 0
-            element = media.get_element()
-            appsrc = element.get_child_by_name("src")
-            if appsrc is None:
-                appsrc = element.get_by_name("src")
-            if appsrc is not None:
-                appsrc.set_property("is-live", True)
-                appsrc.set_property("block", False)
-                appsrc.set_property("format", Gst.Format.TIME)
-                appsrc.set_property("do-timestamp", True)
-                appsrc.set_property("max-bytes", 0)
-                appsrc.set_property("max-buffers", 0)
-                appsrc.set_property("emit-signals", False)
-                self._appsrc = appsrc
-                if self._push_source_id:
-                    GLib.source_remove(self._push_source_id)
-                    self._push_source_id = 0
-                interval_ms = max(1, int(1000 / self._fps))
-                self._push_source_id = GLib.timeout_add(interval_ms, self._push_timer)
-                media.connect("unprepared", self._on_media_unprepared)
-            else:
-                self._owner.get_logger().error("Failed to locate appsrc element in RTSP pipeline")
+            try:
+                self._frame_count = 0
+                element = media.get_element()
+                appsrc = element.get_child_by_name("src")
+                if appsrc is None:
+                    appsrc = element.get_by_name("src")
+                if appsrc is not None:
+                    appsrc.set_property("is-live", True)
+                    appsrc.set_property("block", False)
+                    appsrc.set_property("format", Gst.Format.TIME)
+                    appsrc.set_property("do-timestamp", True)
+                    appsrc.set_property("emit-signals", False)
+                    self._appsrc = appsrc
+                    if self._push_source_id:
+                        GLib.source_remove(self._push_source_id)
+                        self._push_source_id = 0
+                    interval_ms = max(1, int(1000 / self._fps))
+                    self._push_source_id = GLib.timeout_add(interval_ms, self._push_timer)
+                    media.connect("unprepared", self._on_media_unprepared)
+                else:
+                    self._owner.get_logger().error("Failed to locate appsrc element in RTSP pipeline")
+            except Exception as exc:
+                self._owner.get_logger().error(f"RTSP media configure failed: {exc}")
+                self._owner.get_logger().error(traceback.format_exc())
+                raise
 
         def _on_media_unprepared(self, _media):
             if self._push_source_id:
@@ -96,22 +105,25 @@ if GstRtspServer is not None:
             return True
 
         def _push_once(self, src):
-            frame = self._owner.get_stream_frame(self._width, self._height)
-            if frame is None:
-                return
-            payload = frame.tobytes()
-            gst_buffer = Gst.Buffer.new_allocate(None, len(payload), None)
-            gst_buffer.fill(0, payload)
-            gst_buffer.duration = self._frame_duration
-            timestamp = self._frame_count * self._frame_duration
-            gst_buffer.pts = timestamp
-            gst_buffer.dts = timestamp
-            gst_buffer.offset = self._frame_count
-            self._frame_count += 1
+            try:
+                frame = self._owner.get_stream_frame(self._width, self._height)
+                if frame is None:
+                    return
+                payload = frame.tobytes()
+                gst_buffer = Gst.Buffer.new_allocate(None, len(payload), None)
+                gst_buffer.fill(0, payload)
+                gst_buffer.duration = self._frame_duration
+                timestamp = self._frame_count * self._frame_duration
+                gst_buffer.pts = timestamp
+                gst_buffer.dts = timestamp
+                gst_buffer.offset = self._frame_count
+                self._frame_count += 1
 
-            result = src.emit("push-buffer", gst_buffer)
-            if result not in (Gst.FlowReturn.OK, Gst.FlowReturn.FLUSHING):
-                self._owner.get_logger().warning(f"push-buffer returned {result}")
+                result = src.emit("push-buffer", gst_buffer)
+                if result not in (Gst.FlowReturn.OK, Gst.FlowReturn.FLUSHING):
+                    self._owner.get_logger().warning(f"push-buffer returned {result}")
+            except Exception as exc:
+                self._owner.get_logger().warning(f"_push_once failed: {exc}")
 
 else:
 
@@ -164,7 +176,6 @@ class DepthMosaicRtspNode(Node):
         self._rtsp_failed = False
         self._rtsp_factory = None
         self._rtsp_server = None
-        self._rtsp_context = None
         self._rtsp_loop = None
         self._rtsp_thread = None
         self._warned_cloud_dtype = False
@@ -581,10 +592,11 @@ class DepthMosaicRtspNode(Node):
         self._rtsp_server.set_service(str(self.rtsp_port))
         mounts = self._rtsp_server.get_mount_points()
         mounts.add_factory(self.rtsp_mount, self._rtsp_factory)
-        self._rtsp_context = GLib.MainContext()
-        self._rtsp_server.attach(self._rtsp_context)
+        attach_id = self._rtsp_server.attach(None)
+        if attach_id == 0:
+            raise RuntimeError("Failed to attach RTSP server to default GLib main context")
 
-        self._rtsp_loop = GLib.MainLoop.new(self._rtsp_context, False)
+        self._rtsp_loop = GLib.MainLoop()
         self._rtsp_thread = threading.Thread(target=self._run_rtsp_loop, daemon=True)
         self._rtsp_thread.start()
 
@@ -605,13 +617,9 @@ class DepthMosaicRtspNode(Node):
         return frame
 
     def _run_rtsp_loop(self):
-        if self._rtsp_context is None or self._rtsp_loop is None:
+        if self._rtsp_loop is None:
             return
-        self._rtsp_context.push_thread_default()
-        try:
-            self._rtsp_loop.run()
-        finally:
-            self._rtsp_context.pop_thread_default()
+        self._rtsp_loop.run()
 
     def destroy_node(self):
         if self._rtsp_loop is not None and self._rtsp_loop.is_running():
