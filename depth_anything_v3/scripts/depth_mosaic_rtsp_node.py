@@ -531,8 +531,10 @@ class DepthMosaicRtspNode(Node):
             )
         else:
             encode = (
+                "! video/x-raw,format=I420 "
                 f"! x264enc tune=zerolatency speed-preset=ultrafast bitrate={self.bitrate_kbps} "
                 f"key-int-max={fps * 2} "
+                "! video/x-h264,profile=baseline "
                 "! h264parse config-interval=1 "
             )
         pay = "! rtph264pay name=pay0 pt=96 config-interval=1"
