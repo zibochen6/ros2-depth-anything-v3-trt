@@ -64,6 +64,13 @@ if GstRtspServer is not None:
             if appsrc is None:
                 appsrc = element.get_by_name("src")
             if appsrc is not None:
+                appsrc.set_property("is-live", True)
+                appsrc.set_property("block", False)
+                appsrc.set_property("format", Gst.Format.TIME)
+                appsrc.set_property("do-timestamp", True)
+                appsrc.set_property("max-bytes", 0)
+                appsrc.set_property("max-buffers", 0)
+                appsrc.set_property("emit-signals", True)
                 appsrc.connect("need-data", self._on_need_data)
             else:
                 self._owner.get_logger().error("Failed to locate appsrc element in RTSP pipeline")
@@ -84,7 +91,7 @@ if GstRtspServer is not None:
 
             result = src.emit("push-buffer", gst_buffer)
             if result != Gst.FlowReturn.OK:
-                self._owner.get_logger().debug(f"push-buffer returned {result}")
+                self._owner.get_logger().warning(f"push-buffer returned {result}")
 
 else:
 
@@ -137,6 +144,7 @@ class DepthMosaicRtspNode(Node):
         self._rtsp_failed = False
         self._rtsp_factory = None
         self._rtsp_server = None
+        self._rtsp_context = None
         self._rtsp_loop = None
         self._rtsp_thread = None
         self._warned_cloud_dtype = False
@@ -533,8 +541,8 @@ class DepthMosaicRtspNode(Node):
             encode = (
                 "! video/x-raw,format=I420 "
                 f"! x264enc tune=zerolatency speed-preset=ultrafast bitrate={self.bitrate_kbps} "
+                "bframes=0 byte-stream=true aud=true threads=1 "
                 f"key-int-max={fps * 2} "
-                "! video/x-h264,profile=baseline "
                 "! h264parse config-interval=1 "
             )
         pay = "! rtph264pay name=pay0 pt=96 config-interval=1"
@@ -552,10 +560,11 @@ class DepthMosaicRtspNode(Node):
         self._rtsp_server.set_service(str(self.rtsp_port))
         mounts = self._rtsp_server.get_mount_points()
         mounts.add_factory(self.rtsp_mount, self._rtsp_factory)
-        self._rtsp_server.attach(None)
+        self._rtsp_context = GLib.MainContext()
+        self._rtsp_server.attach(self._rtsp_context)
 
-        self._rtsp_loop = GLib.MainLoop()
-        self._rtsp_thread = threading.Thread(target=self._rtsp_loop.run, daemon=True)
+        self._rtsp_loop = GLib.MainLoop.new(self._rtsp_context, False)
+        self._rtsp_thread = threading.Thread(target=self._run_rtsp_loop, daemon=True)
         self._rtsp_thread.start()
 
         self._rtsp_started = True
@@ -573,6 +582,15 @@ class DepthMosaicRtspNode(Node):
         if frame.shape[1] != width or frame.shape[0] != height:
             frame = cv2.resize(frame, (width, height), interpolation=cv2.INTER_LINEAR)
         return frame
+
+    def _run_rtsp_loop(self):
+        if self._rtsp_context is None or self._rtsp_loop is None:
+            return
+        self._rtsp_context.push_thread_default()
+        try:
+            self._rtsp_loop.run()
+        finally:
+            self._rtsp_context.pop_thread_default()
 
     def destroy_node(self):
         if self._rtsp_loop is not None and self._rtsp_loop.is_running():
