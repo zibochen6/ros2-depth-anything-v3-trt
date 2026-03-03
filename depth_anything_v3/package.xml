@@ -25,6 +25,11 @@
   
   <build_depend>libyaml-cpp-dev</build_depend>
   <exec_depend>libyaml-cpp-dev</exec_depend>
+  <exec_depend>python3-numpy</exec_depend>
+  <exec_depend>python3-opencv</exec_depend>
+  <exec_depend>python3-gi</exec_depend>
+  <exec_depend>python3-gst-1.0</exec_depend>
+  <exec_depend>gir1.2-gst-rtsp-server-1.0</exec_depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>

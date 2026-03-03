@@ -252,6 +252,26 @@ cd ~/ros2_ws/src/ros2-depth-anything-v3-trt
 - Press 's' to save current frame
 - Press 'q' or ESC to quit
 
+### Mode 5: Camera + Depth + PointCloud RTSP Streaming
+
+Compose point cloud (top), camera image (bottom-left), and depth image (bottom-right),
+then stream as H264 RTSP:
+
+```bash
+cd ~/ros2_ws/src/ros2-depth-anything-v3-trt
+./run_camera_depth_rtsp.sh
+```
+
+Default URL:
+- Local: `rtsp://127.0.0.1:8554/depth`
+- LAN: `rtsp://<jetson-ip>:8554/depth`
+
+Viewer examples:
+```bash
+ffplay rtsp://127.0.0.1:8554/depth
+vlc rtsp://<jetson-ip>:8554/depth
+```
+
 ## 📖 Usage Modes
 
 ### 1. Single Camera Depth Estimation
@@ -406,6 +426,55 @@ ros2 launch depth_anything_v3 video_depth_rviz.launch.py \
 - Frame saving with 's' key
 - No ROS dependencies required
 
+### 6. Camera Mosaic RTSP Streaming
+
+**One-line launch:**
+```bash
+./run_camera_depth_rtsp.sh
+```
+
+**ROS2 launch (all-in-one):**
+```bash
+source install/setup.bash
+
+ros2 launch depth_anything_v3 camera_depth_rtsp.launch.py \
+  camera_id:=0 \
+  camera_width:=640 \
+  camera_height:=480 \
+  stream_fps:=15 \
+  rtsp_port:=8554 \
+  rtsp_mount:=/depth \
+  encoder:=auto \
+  bitrate_kbps:=4000
+```
+
+**RTSP-only launch (reuse existing topics):**
+```bash
+source install/setup.bash
+
+ros2 launch depth_anything_v3 depth_mosaic_rtsp.launch.py \
+  input_image_topic:=/camera/image \
+  input_depth_topic:=/camera/depth_colored \
+  input_pointcloud_topic:=/camera/point_cloud
+```
+
+**Required packages (Ubuntu):**
+```bash
+sudo apt update
+sudo apt install -y \
+  python3-gi python3-gst-1.0 gir1.2-gst-rtsp-server-1.0 \
+  gstreamer1.0-tools gstreamer1.0-plugins-base \
+  gstreamer1.0-plugins-good gstreamer1.0-plugins-bad \
+  gstreamer1.0-libav
+```
+
+**Published topic:**
+- `/camera/depth_mosaic` - 2x2 mosaic image (PointCloud + Camera + Depth)
+
+**RTSP URL:**
+- Local: `rtsp://127.0.0.1:8554/depth`
+- LAN: `rtsp://<jetson-ip>:8554/depth`
+
 ## ⚙️ Configuration
 
 ### Camera Resolution Settings
@@ -546,6 +615,39 @@ echo $CUDACXX
 nvcc --version
 ```
 
+### RTSP Node Fails to Start (missing gi/GstRtspServer)
+
+```bash
+sudo apt update
+sudo apt install -y \
+  python3-gi python3-gst-1.0 gir1.2-gst-rtsp-server-1.0 \
+  gstreamer1.0-tools gstreamer1.0-plugins-base \
+  gstreamer1.0-plugins-good gstreamer1.0-plugins-bad \
+  gstreamer1.0-libav
+```
+
+Then rebuild and relaunch:
+```bash
+cd ~/ros2_ws
+colcon build --packages-select depth_anything_v3
+source install/setup.bash
+./run_camera_depth_rtsp.sh
+```
+
+### RTSP URL Cannot Be Opened From Another PC
+
+1. Confirm Jetson and PC are on the same LAN.
+2. Use Jetson IP address (not 127.0.0.1) on the PC.
+3. Check port access:
+   ```bash
+   ss -ltnp | grep 8554
+   ```
+4. Test from Jetson local first:
+   ```bash
+   ffplay rtsp://127.0.0.1:8554/depth
+   ```
+5. If firewall is enabled, allow TCP 8554.
+
 ### RViz2 Point Cloud Not Showing
 
 1. Check Fixed Frame is set to `base_link`
@@ -594,6 +696,7 @@ camera_height: 240
 | `/camera/image` | sensor_msgs/Image | Original camera image |
 | `/camera/depth` | sensor_msgs/Image | Depth image (32FC1) |
 | `/camera/depth_colored` | sensor_msgs/Image | Colored depth visualization |
+| `/camera/depth_mosaic` | sensor_msgs/Image | Mosaic image for RTSP streaming |
 | `/camera/point_cloud` | sensor_msgs/PointCloud2 | RGB point cloud |
 | `/camera/camera_info` | sensor_msgs/CameraInfo | Camera intrinsics |
 
@@ -605,6 +708,11 @@ camera_height: 240
 | `/video/depth_colored` | sensor_msgs/Image | Colored depth |
 | `/video/point_cloud` | sensor_msgs/PointCloud2 | Point cloud |
 | `/video/camera_info` | sensor_msgs/CameraInfo | Camera info |
+
+### RTSP Endpoints
+
+- `rtsp://127.0.0.1:8554/depth` (local Jetson)
+- `rtsp://<jetson-ip>:8554/depth` (other PC in LAN)
 
 ### Parameters
 
