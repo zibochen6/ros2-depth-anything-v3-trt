@@ -53,6 +53,8 @@ if GstRtspServer is not None:
             self._launch = launch
             self._frame_count = 0
             self._frame_duration = Gst.util_uint64_scale_int(1, Gst.SECOND, self._fps)
+            self._appsrc = None
+            self._push_source_id = 0
 
         def do_create_element(self, _url):
             return Gst.parse_launch(self._launch)
@@ -70,12 +72,30 @@ if GstRtspServer is not None:
                 appsrc.set_property("do-timestamp", True)
                 appsrc.set_property("max-bytes", 0)
                 appsrc.set_property("max-buffers", 0)
-                appsrc.set_property("emit-signals", True)
-                appsrc.connect("need-data", self._on_need_data)
+                appsrc.set_property("emit-signals", False)
+                self._appsrc = appsrc
+                if self._push_source_id:
+                    GLib.source_remove(self._push_source_id)
+                    self._push_source_id = 0
+                interval_ms = max(1, int(1000 / self._fps))
+                self._push_source_id = GLib.timeout_add(interval_ms, self._push_timer)
+                media.connect("unprepared", self._on_media_unprepared)
             else:
                 self._owner.get_logger().error("Failed to locate appsrc element in RTSP pipeline")
 
-        def _on_need_data(self, src, _length):
+        def _on_media_unprepared(self, _media):
+            if self._push_source_id:
+                GLib.source_remove(self._push_source_id)
+                self._push_source_id = 0
+            self._appsrc = None
+
+        def _push_timer(self):
+            if self._appsrc is None:
+                return False
+            self._push_once(self._appsrc)
+            return True
+
+        def _push_once(self, src):
             frame = self._owner.get_stream_frame(self._width, self._height)
             if frame is None:
                 return
@@ -86,11 +106,11 @@ if GstRtspServer is not None:
             timestamp = self._frame_count * self._frame_duration
             gst_buffer.pts = timestamp
             gst_buffer.dts = timestamp
-            gst_buffer.offset = timestamp
+            gst_buffer.offset = self._frame_count
             self._frame_count += 1
 
             result = src.emit("push-buffer", gst_buffer)
-            if result != Gst.FlowReturn.OK:
+            if result not in (Gst.FlowReturn.OK, Gst.FlowReturn.FLUSHING):
                 self._owner.get_logger().warning(f"push-buffer returned {result}")
 
 else:
@@ -543,6 +563,7 @@ class DepthMosaicRtspNode(Node):
                 f"! x264enc tune=zerolatency speed-preset=ultrafast bitrate={self.bitrate_kbps} "
                 "bframes=0 byte-stream=true aud=true threads=1 "
                 f"key-int-max={fps * 2} "
+                "! video/x-h264,stream-format=byte-stream,alignment=au,profile=baseline "
                 "! h264parse config-interval=1 "
             )
         pay = "! rtph264pay name=pay0 pt=96 config-interval=1"
