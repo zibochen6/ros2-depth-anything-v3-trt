@@ -132,4 +132,3 @@ ros2 launch depth_anything_v3 camera_depth_rviz.launch.py \
     downsample_factor:=${DOWNSAMPLE_FACTOR} \
     ${CALIB_PARAMS} \
     ${UNDISTORT_PARAMS}
-
